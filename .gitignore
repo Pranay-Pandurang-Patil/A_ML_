@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Dataset files
+data/
+
+# Generated outputs
+output/
+output_v2/
+output_v2_test/
+
+# Local models/artifacts
+*.joblib
