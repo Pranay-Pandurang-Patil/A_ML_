@@ -32,7 +32,7 @@ def process_chunk(
     features = []
 
     for row in source.itertuples(index=False):
-        candidate_ids, _ = candidates_for_row_v2(
+        candidate_ids, reasons = candidates_for_row_v2(
             row,
             indexes,
         )
@@ -47,11 +47,16 @@ def process_chunk(
             if left is None:
                 continue
 
+            blocking_reasons = sorted(
+                reasons.get(s1_id, set())
+            )
+
             pairs.append(
                 (
                     str(s1_id),
                     source_id,
                     source_name,
+                    "|".join(blocking_reasons),
                 )
             )
 
@@ -69,8 +74,9 @@ def process_chunk(
         pairs,
         columns=[
             "source1_entity_id",
-            "source_entity_id",
-            "source",
+            "candidate_entity_id",
+            "candidate_source",
+            "blocking_reasons",
         ],
     )
 
@@ -88,13 +94,20 @@ def process_chunk(
         threshold,
     )
 
-    pair_df["probability"] = probabilities
-    pair_df["is_match"] = matches
+    score_df = pair_df.rename(
+        columns={
+            "candidate_entity_id": "source_entity_id",
+            "candidate_source": "source",
+        }
+    ).copy()
+
+    score_df["probability"] = probabilities
+    score_df["is_match"] = matches
 
     matched = {}
 
-    for row in pair_df.loc[
-        pair_df["is_match"] == 1
+    for row in score_df.loc[
+        score_df["is_match"] == 1
     ].itertuples(index=False):
 
         matched.setdefault(
@@ -104,7 +117,11 @@ def process_chunk(
             str(row.source_entity_id)
         )
 
-    return pair_df, matched
+    return (
+        pair_df,
+        score_df,
+        matched,
+    )
 
 
 def append_tsv(
@@ -164,10 +181,31 @@ def main():
         default=Path("output_v2"),
     )
 
-    ap.add_argument("--chunk-size", type=int, default=1000)
-    ap.add_argument("--s1-limit", type=int, default=None)
-    ap.add_argument("--s2-limit", type=int, default=None)
-    ap.add_argument("--s3-limit", type=int, default=None)
+    ap.add_argument(
+        "--chunk-size",
+        type=int,
+        default=1000,
+    )
+
+    # Optional limits are intended only for smoke tests.
+    # By default they are None, so the complete datasets are processed.
+    ap.add_argument(
+        "--s1-limit",
+        type=int,
+        default=None,
+    )
+
+    ap.add_argument(
+        "--s2-limit",
+        type=int,
+        default=None,
+    )
+
+    ap.add_argument(
+        "--s3-limit",
+        type=int,
+        default=None,
+    )
 
     args = ap.parse_args()
 
@@ -189,8 +227,7 @@ def main():
         out / "matching_results.tsv"
     )
 
-    # Remove old inference artifacts so the new
-    # run starts cleanly.
+    # Remove old inference artifacts so every run starts cleanly.
     for path in [
         candidate_path,
         score_path,
@@ -202,7 +239,10 @@ def main():
     print("Loading S1...")
 
     s1 = prepare_dataframe_v2(
-        load_source(args.s1, nrows=args.s1_limit)
+        load_source(
+            args.s1,
+            nrows=args.s1_limit,
+        )
     )
 
     print(
@@ -245,11 +285,17 @@ def main():
             f"Processing {source_name.upper()}..."
         )
 
+        source_limit = (
+            args.s2_limit
+            if source_name == "s2"
+            else args.s3_limit
+        )
+
         source_reader = pd.read_csv(
             source_path,
             sep="\t",
             chunksize=args.chunk_size,
-            nrows=(args.s2_limit if source_name == "s2" else args.s3_limit),
+            nrows=source_limit,
             dtype=str,
             keep_default_na=False,
         )
@@ -269,7 +315,11 @@ def main():
                 raw_chunk
             )
 
-            pair_df, matched = process_chunk(
+            (
+                candidate_df,
+                score_df,
+                matched,
+            ) = process_chunk(
                 source,
                 source_name,
                 s1_lookup,
@@ -284,15 +334,7 @@ def main():
                     set(),
                 ).update(ids)
 
-            if not pair_df.empty:
-
-                candidate_df = pair_df[
-                    [
-                        "source1_entity_id",
-                        "source_entity_id",
-                        "source",
-                    ]
-                ]
+            if not candidate_df.empty:
 
                 append_tsv(
                     candidate_df,
@@ -301,7 +343,7 @@ def main():
                 )
 
                 append_tsv(
-                    pair_df,
+                    score_df,
                     score_path,
                     header=not score_header_written,
                 )
@@ -311,7 +353,8 @@ def main():
 
             del source
             del raw_chunk
-            del pair_df
+            del candidate_df
+            del score_df
             del matched
 
     print()
@@ -319,7 +362,7 @@ def main():
         "Writing submission..."
     )
 
-    # Exactly one S1 row for every S1 entity.
+    # Exactly one S1 row for every loaded S1 entity.
     rows = []
 
     for s1_id in s1.entity_id.astype(str):
