@@ -3,3 +3,4 @@ numpy>=1.26,<3
 rapidfuzz>=3.9,<4
 tqdm>=4.66,<5
 scikit-learn>=1.5,<2
+xgboost
