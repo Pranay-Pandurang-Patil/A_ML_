@@ -1,0 +1,19 @@
+{
+  "macro_f0_5": 0.05590852915443356,
+  "selected_threshold": 0.95,
+  "training_rows": 874,
+  "validation_rows": 1000,
+  "candidate_sample_rows": 5000,
+  "random_state": 42,
+  "chunk_size": 1000,
+  "candidate_metrics": [
+    {
+      "source": "s2",
+      "source_rows": 3000,
+      "candidate_pairs": 116349,
+      "s1_with_candidates": 106925,
+      "avg_candidates_per_source_row": 38.783
+    }
+  ],
+  "model_type": "xgboost"
+}

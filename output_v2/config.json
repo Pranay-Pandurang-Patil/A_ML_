@@ -1,0 +1,12 @@
+{
+  "random_state": 42,
+  "metric": "macro_f0.5",
+  "threshold_search": {
+    "start": 0.1,
+    "stop": 0.95,
+    "step": 0.01
+  },
+  "allow_no_match": true,
+  "allow_multiple_matches": true,
+  "candidate_generation": "v2_multi_pass_union"
+}
